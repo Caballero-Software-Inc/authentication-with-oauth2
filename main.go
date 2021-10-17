@@ -4,15 +4,16 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 )
 
+func hello(w http.ResponseWriter, r *http.Request) {
+	io.WriteString(w, "Hello World")
+}
+
 func main() {
-	// Hello world, the web server
-
-	helloHandler := func(w http.ResponseWriter, req *http.Request) {
-		io.WriteString(w, "Hello, world!\n")
-	}
-
-	http.HandleFunc("/hello", helloHandler)
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	port := os.Getenv("PORT")
+	http.HandleFunc("/", hello)
+	log.Print("Listening on :" + port)
+	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
