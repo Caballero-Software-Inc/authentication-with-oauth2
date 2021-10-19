@@ -31,7 +31,7 @@ func main() {
 	)
 
 	handleHome := func(w http.ResponseWriter, r *http.Request) {
-		var html = `<html> <body> <a href="/login">Googloe Log In</a> </body> </html>`
+		var html = `<html> <body> <a href="/login">Google Log In</a> </body> </html>`
 		fmt.Fprint(w, html)
 	}
 
