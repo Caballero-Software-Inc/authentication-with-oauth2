@@ -1,9 +1,10 @@
 package main
 
-// tutorial: https://www.youtube.com/watch?v=OdyXIi6DGYw
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 
@@ -12,65 +13,76 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-func main() {
-	err := godotenv.Load(".env")
+var (
+	googleOauthConfig *oauth2.Config
+	// TODO: randomize it
+	oauthStateString = os.Getenv("oauthStateString")
+)
+
+func init() {
+	err := godotenv.Load()
 	if err != nil {
-		fmt.Println("Error loading .env")
+		log.Fatal("Error loading .env file")
+	}
+
+	googleOauthConfig = &oauth2.Config{
+		RedirectURL:  "http://localhost:8080/callback",
+		ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
+		ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
+		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
+		Endpoint:     google.Endpoint,
+	}
+}
+
+func main() {
+	http.HandleFunc("/", handleMain)
+	http.HandleFunc("/login", handleGoogleLogin)
+	http.HandleFunc("/callback", handleGoogleCallback)
+	fmt.Println(http.ListenAndServe(":8080", nil))
+}
+
+func handleMain(w http.ResponseWriter, r *http.Request) {
+	var htmlIndex = `<html><body><a href="/login">Google Log In</a></body></html>`
+
+	fmt.Fprintln(w, htmlIndex)
+}
+
+func handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
+	url := googleOauthConfig.AuthCodeURL(oauthStateString)
+	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+}
+
+func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
+	content, err := getUserInfo(r.FormValue("state"), r.FormValue("code"))
+	if err != nil {
+		fmt.Println(err.Error())
+		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
 		return
 	}
-	var (
-		googleOauthConfig = &oauth2.Config{
-			RedirectURL:  "http://localhost:8080/callback",
-			ClientID:     os.Getenv("GOOGLE_CLIENT_ID"),
-			ClientSecret: os.Getenv("GOOGLE_CLIENT_SECRET"),
-			Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
-			Endpoint:     google.Endpoint,
-		}
-		//TODO: randomize
-		randomState = "random"
-	)
 
-	handleHome := func(w http.ResponseWriter, r *http.Request) {
-		var html = `<html> <body> <a href="/login">Google Log In</a> </body> </html>`
-		fmt.Fprint(w, html)
+	fmt.Fprintf(w, "Content: %s\n", content)
+}
+
+func getUserInfo(state string, code string) ([]byte, error) {
+	if state != oauthStateString {
+		return nil, fmt.Errorf("invalid oauth state")
 	}
 
-	handleLogin := func(w http.ResponseWriter, r *http.Request) {
-		url := googleOauthConfig.AuthCodeURL(randomState)
-		http.Redirect(w, r, url, http.StatusTemporaryRedirect)
+	token, err := googleOauthConfig.Exchange(context.Background(), code)
+	if err != nil {
+		return nil, fmt.Errorf("code exchange failed: %s", err.Error())
 	}
 
-	handleCallback := func(w http.ResponseWriter, r *http.Request) {
-		if r.FormValue("state") != randomState {
-			fmt.Println("state is not valid")
-			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-			return
-		}
-		token, err := googleOauthConfig.Exchange(oauth2.NoContext, r.FormValue("code"))
-		if err != nil {
-			fmt.Printf("could not get token: %s\n", err.Error())
-			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-			return
-		}
-		resp, err := http.Get("https://www.googleapis.com/oath2/v2/userinfo?access_token=" + token.AccessToken)
-		if err != nil {
-			fmt.Printf("could not create get request: %s\n", err.Error())
-			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-			return
-		}
-		defer resp.Body.Close()
-		content, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			fmt.Printf("could not parse response: %s\n", err.Error())
-			http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-			return
-		}
-
-		fmt.Fprintf(w, "Response: %s", content)
+	response, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting user info: %s", err.Error())
 	}
 
-	http.HandleFunc("/", handleHome)
-	http.HandleFunc("/login", handleLogin)
-	http.HandleFunc("/callback", handleCallback)
-	http.ListenAndServe(":8080", nil) //TODO get it from environement
+	defer response.Body.Close()
+	contents, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body: %s", err.Error())
+	}
+
+	return contents, nil
 }
