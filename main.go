@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -19,6 +20,13 @@ var (
 	oauthStateString = os.Getenv("oauthStateString")
 )
 
+func main() {
+	http.HandleFunc("/", handleMain)
+	http.HandleFunc("/login", handleGoogleLogin)
+	http.HandleFunc("/callback", handleGoogleCallback)
+	fmt.Println(http.ListenAndServe(":8080", nil))
+}
+
 func init() {
 	err := godotenv.Load()
 	if err != nil {
@@ -32,13 +40,6 @@ func init() {
 		Scopes:       []string{"https://www.googleapis.com/auth/userinfo.email"},
 		Endpoint:     google.Endpoint,
 	}
-}
-
-func main() {
-	http.HandleFunc("/", handleMain)
-	http.HandleFunc("/login", handleGoogleLogin)
-	http.HandleFunc("/callback", handleGoogleCallback)
-	fmt.Println(http.ListenAndServe(":8080", nil))
 }
 
 func handleMain(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +61,18 @@ func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var jsonContent map[string]interface{}
+
+	json.Unmarshal([]byte(content), &jsonContent)
+	var ok bool = jsonContent["verified_email"] == true
 	fmt.Fprintf(w, "Content: %s\n", content)
+
+	if ok {
+		uploadUser(jsonContent["id"].(string), jsonContent["email"].(string))
+	} else {
+		fmt.Println("Authentication failed because the email was not verified.")
+	}
+
 }
 
 func getUserInfo(state string, code string) ([]byte, error) {
@@ -85,4 +97,10 @@ func getUserInfo(state string, code string) ([]byte, error) {
 	}
 
 	return contents, nil
+}
+
+func uploadUser(id string, email string) {
+	fmt.Println(email)
+	fmt.Println(id)
+	//send it to AWS DynamoDB
 }
