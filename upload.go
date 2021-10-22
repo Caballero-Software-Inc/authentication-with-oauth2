@@ -11,6 +11,8 @@ import (
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbattribute"
 )
 
+const TABLE_NAME = "users-caballero"
+
 type Item struct {
 	Id      string `json:"id"`
 	Email   string `json:"email"`
@@ -18,15 +20,6 @@ type Item struct {
 }
 
 func uploadUser(id string, email string) {
-	fmt.Println(email)
-	fmt.Println(id)
-	item := Item{
-		Id:      id,
-		Email:   email,
-		Credits: 0,
-	}
-	//send it to AWS DynamoDB
-
 	aws_access_key_id := os.Getenv("AccessKeyID")
 	aws_secret_access_key := os.Getenv("SecretAccessKey")
 	region := os.Getenv("REGION")
@@ -37,11 +30,51 @@ func uploadUser(id string, email string) {
 	})
 
 	svc := dynamodb.New(sess)
-	AddDBItem(item, svc)
+
+	inexisting := ExistingItem(id, email, svc)
+
+	if inexisting {
+		item := Item{
+			Id:      id,
+			Email:   email,
+			Credits: 0,
+		}
+		AddDBItem(item, svc)
+	} else {
+		fmt.Println("The user was already registered.")
+	}
+}
+
+func ExistingItem(id string, email string, svc *dynamodb.DynamoDB) bool {
+
+	result, err := svc.GetItem(&dynamodb.GetItemInput{
+		TableName: aws.String(TABLE_NAME),
+		Key: map[string]*dynamodb.AttributeValue{
+			"id": {
+				S: aws.String(id),
+			},
+			"email": {
+				S: aws.String(email),
+			},
+		},
+	})
+
+	if err != nil {
+		fmt.Println("Error verifying item")
+		fmt.Println(err.Error())
+	}
+	item := Item{}
+
+	err = dynamodbattribute.UnmarshalMap(result.Item, &item)
+
+	if err != nil {
+		panic(fmt.Sprintf("Failed to unmarshal Record, %v", err))
+	}
+
+	return (item.Id == "")
 }
 
 func AddDBItem(item Item, svc *dynamodb.DynamoDB) {
-	TABLE_NAME := "users-caballero"
 	av, _ := dynamodbattribute.MarshalMap(item)
 	input := &dynamodb.PutItemInput{
 		Item:      av,
@@ -55,5 +88,5 @@ func AddDBItem(item Item, svc *dynamodb.DynamoDB) {
 		os.Exit(1)
 	}
 
-	fmt.Println("Item added to the table.")
+	fmt.Println("User registered")
 }
