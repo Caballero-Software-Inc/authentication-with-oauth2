@@ -1,10 +1,7 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
@@ -19,13 +16,6 @@ var (
 	// TODO: randomize it
 	oauthStateString = os.Getenv("oauthStateString")
 )
-
-func main() {
-	http.HandleFunc("/", handleMain)
-	http.HandleFunc("/login", handleGoogleLogin)
-	http.HandleFunc("/callback", handleGoogleCallback)
-	fmt.Println(http.ListenAndServe(":8080", nil))
-}
 
 func init() {
 	err := godotenv.Load()
@@ -42,65 +32,9 @@ func init() {
 	}
 }
 
-func handleMain(w http.ResponseWriter, r *http.Request) {
-	var htmlIndex = `<html><body><a href="/login">Google Log In</a></body></html>`
-
-	fmt.Fprintln(w, htmlIndex)
-}
-
-func handleGoogleLogin(w http.ResponseWriter, r *http.Request) {
-	url := googleOauthConfig.AuthCodeURL(oauthStateString)
-	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
-}
-
-func handleGoogleCallback(w http.ResponseWriter, r *http.Request) {
-	content, err := getUserInfo(r.FormValue("state"), r.FormValue("code"))
-	if err != nil {
-		fmt.Println(err.Error())
-		http.Redirect(w, r, "/", http.StatusTemporaryRedirect)
-		return
-	}
-
-	var jsonContent map[string]interface{}
-
-	json.Unmarshal([]byte(content), &jsonContent)
-	var ok bool = jsonContent["verified_email"] == true
-	fmt.Fprintf(w, "Content: %s\n", content)
-
-	if ok {
-		uploadUser(jsonContent["id"].(string), jsonContent["email"].(string))
-	} else {
-		fmt.Println("Authentication failed because the email was not verified.")
-	}
-
-}
-
-func getUserInfo(state string, code string) ([]byte, error) {
-	if state != oauthStateString {
-		return nil, fmt.Errorf("invalid oauth state")
-	}
-
-	token, err := googleOauthConfig.Exchange(context.Background(), code)
-	if err != nil {
-		return nil, fmt.Errorf("code exchange failed: %s", err.Error())
-	}
-
-	response, err := http.Get("https://www.googleapis.com/oauth2/v2/userinfo?access_token=" + token.AccessToken)
-	if err != nil {
-		return nil, fmt.Errorf("failed getting user info: %s", err.Error())
-	}
-
-	defer response.Body.Close()
-	contents, err := ioutil.ReadAll(response.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed reading response body: %s", err.Error())
-	}
-
-	return contents, nil
-}
-
-func uploadUser(id string, email string) {
-	fmt.Println(email)
-	fmt.Println(id)
-	//send it to AWS DynamoDB
+func main() {
+	http.HandleFunc("/", handleMain)
+	http.HandleFunc("/login", handleGoogleLogin)
+	http.HandleFunc("/callback", handleGoogleCallback)
+	fmt.Println(http.ListenAndServe(":8080", nil))
 }
